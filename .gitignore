@@ -1,6 +1,6 @@
 libmem1.so
-mem.o 
-test 
+mem.o
+test
 testmain
 .mem.h.swp
 .mem_main.c.swp
