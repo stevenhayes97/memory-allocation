@@ -67,8 +67,7 @@ int Mem_Init(int size)	{
 	close(fd);
 
 	// Set this bit only if Mem_Init called correctly
-//	fprintf(stdout,"Node size = %lu\n",sizeof(node_t)); // FIXME remove
-//	fprintf(stdout,"Header size = %lu\n",sizeof(header_t)); // FIXME remove
+	//	fprintf(stdout,"Header size = %lu\n",sizeof(header_t)); // FIXME remove
 
 	initialized=1;
 	return 0;
@@ -76,7 +75,9 @@ int Mem_Init(int size)	{
 
 void *Mem_Alloc(int size) {
 	//ALigning to 8 byte block
-	size = size + BLOCK_SIZE -(size % BLOCK_SIZE);
+	if (size % BLOCK_SIZE != 0) {
+		size = size + BLOCK_SIZE - (size%BLOCK_SIZE);
+	}
 	//Actual size needed is size of region + header
 	int sizeAlloc = size + sizeof(header_t); // Optimize inline?
 //	fprintf(stdout,"Size original = %d | with Header:%d\n", size, sizeAlloc); // FIXME remove
@@ -108,7 +109,7 @@ void *Mem_Alloc(int size) {
 	}
 	else {	// Entire region used up, so no addition to free list
 		prev->next = scanner->next;
-		memAvailable = memAvailable - sizeAlloc + sizeof(node_t);
+		memAvailable -= sizeAlloc +sizeof(node_t);
 		numNodesFreeList--;
 	}
 
@@ -122,7 +123,7 @@ void *Mem_Alloc(int size) {
 
 	Mem_Dump(); //FIXME
 	
-
+	printf("PTR RETURN HERE=====>%p\n", (void *)ptr);
 	return (void *)ptr;	
 }
 
@@ -171,12 +172,13 @@ int Mem_Available() {
 void Mem_Dump(){
 	node_t *node = head;
 	//Print out global variables
+	printf("==================MEM DUMP=================\n");
 	printf("Size of Free List:%d\n", numNodesFreeList);
 
 	//Print out the free list
 	int i=0;
 	for(;i<numNodesFreeList;i++) {
-		printf("Size:%d %p\n", node->size, node);
+		printf("Size:%d %p\n", node->size, (void *) node);
 		node = node->next;
 	}
 }
@@ -185,8 +187,9 @@ int main(int argc, char *argv[]) {
 	int i=0; 
 	void *ptr[10];
 	for (; i<10; i++) {
-		ptr[i] = Mem_Alloc(40);
+		ptr[i] = Mem_Alloc(34);
 		printf("Iteration %d:: Mem_Alloc called, return value:%p\n",i, ptr);
+		printf("Free space:%d\n", Mem_Available());
 	}
 	printf("Free space:%d\n", Mem_Available());
 	Mem_Free(ptr[3]);
