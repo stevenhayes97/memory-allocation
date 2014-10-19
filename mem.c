@@ -107,10 +107,19 @@ void *Mem_Alloc(int size) {
 		}
 		memAvailable -= sizeAlloc;
 	}
-	else {	// Entire region used up, so no addition to free list
-		prev->next = scanner->next;
-		memAvailable -= sizeAlloc -sizeof(node_t);
-		numNodesFreeList--;
+	else {	// Entire region used up, so no addition to free list, unless this is the last chunk of memory
+		if((void *)scanner != (void *)head) {
+			prev->next = scanner->next;
+			memAvailable -= sizeAlloc -sizeof(node_t);
+			numNodesFreeList--;
+		}
+		else {	// Header is the only thing left
+			head = (node_t *)((char *)scanner + sizeAlloc);
+			head->next = NULL;
+			head->size = 0;
+			memAvailable = 0;
+// FIXME			numNodesFreeList--; 
+		}
 	}
 
 	header_t *ptr = (void *)scanner;
@@ -139,8 +148,8 @@ int Mem_Free(void* ptr) {
 		m_error = E_INV_PTR;
 		return -1;
 	}
-
 	node_t *node = head;
+//	if(head != NULL) // FIXME if the head at the end is done away with!
 	if ((char *)head > (char *)block) {
 		node_t *new = (void *) block;
 		new->next = head;
@@ -148,7 +157,13 @@ int Mem_Free(void* ptr) {
 		memAvailable += new->size;
 		head = new;
 		numNodesFreeList++;
-		//TODO FIXME ADD COALESCING HERE
+		if((char *)new + new->size + sizeof(node_t) == (char *)new->next) {
+//			printf("------COALESCING ON HEAD------------\n");
+			new->size += new->next->size + sizeof(node_t);
+			new->next = new->next->next;
+			numNodesFreeList--;
+			memAvailable += sizeof(node_t);
+		} 
 	}
 	else {
 		while ((char *)block > (char *)node->next && node->next != NULL) { //FIXME IS THERE ANY CASE MISSING HERE?
@@ -160,6 +175,23 @@ int Mem_Free(void* ptr) {
 		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?
 		memAvailable += new->size;
 		numNodesFreeList++;
+		//Lets Coalesce!
+		if((char *)node + node->size + sizeof(node_t) == (char *)new) {
+//			printf("------COALESCING ON LEFT------------\n");
+			node->size += new->size + sizeof(node_t);
+			node->next = new->next;
+			numNodesFreeList--;
+			new = node; // FIXME IS THIS CORRECT? DONE TO ENSURE COALESCING IN BOTH CASES ON RIGH SIDE
+			memAvailable += sizeof(node_t);
+		}
+		if((char *)new + new->size + sizeof(node_t) == (char *)new->next) {
+//			printf("------COALESCING ON RIGHT------------\n");
+			new->size += new->next->size + sizeof(node_t);
+			new->next = new->next->next;
+			numNodesFreeList--;
+			memAvailable += sizeof(node_t);
+		}
+
 	}
 	Mem_Dump();
 	return 0;
@@ -182,4 +214,6 @@ void Mem_Dump(){
 		printf("Size:%d %p\n", node->size, (void *) node);
 		node = node->next;
 	}
+	if (numNodesFreeList == 0)
+		printf("Size:%d %p\n", head->size, (void *) head);
 }

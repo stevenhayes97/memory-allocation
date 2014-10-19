@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "mem.h"
-#define NUM_ITER 10
+#define NUM_ITER 51
 int main(int argc, char *argv[]) {
 	printf("Mem Init Result:%d\n",Mem_Init(1233));
 	int i=0; 
@@ -13,9 +13,9 @@ int main(int argc, char *argv[]) {
 //		printf("Free space:%d\n", Mem_Available());
 	}
 	printf("Free space:%d\n", Mem_Available());
-	Mem_Free(ptr[3]);
-	Mem_Free(ptr[6]);
-	Mem_Free(ptr[7]);
+	for (i=NUM_ITER-1; i>=0; i--) {
+		Mem_Free(ptr[i]);
+	}
 	printf("Free space:%d\n", Mem_Available());
 //	int *ptr1 = malloc(sizeof(int));
 //	Mem_Free(ptr1);
