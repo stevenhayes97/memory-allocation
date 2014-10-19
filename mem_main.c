@@ -11,6 +11,7 @@
 int m_error;
 #define E_BAD_ARGS 1 //FIXME
 #define E_MEM_FULL 2 //FIXME
+#define E_INV_PTR 3 
 #define BLOCK_SIZE 8
 typedef struct __header_t {
 	int size;
@@ -25,6 +26,7 @@ typedef struct __node_t {
 node_t *head;
 node_t *scanner;
 int numNodesFreeList=0;
+int memAvailable=0;
 
 int Mem_Init(int size)	{
 	static int initialized=0;
@@ -43,11 +45,11 @@ int Mem_Init(int size)	{
 	}
 	// Align request to page size
 	pageSize= getpagesize();
-	fprintf(stdout,"Get page size = %d\n",pageSize); // FIXME remove
+//	fprintf(stdout,"Get page size = %d\n",pageSize); // FIXME remove
         if(size % pageSize != 0){
 		size = size + pageSize - (size % pageSize);
 	}
-	fprintf(stdout,"Asking for size = %d\n",size); // FIXME remove
+//	fprintf(stdout,"Asking for size = %d\n",size); // FIXME remove
 
 	// open the /dev/zero device
 	int fd = open("/dev/zero", O_RDWR);
@@ -60,12 +62,13 @@ int Mem_Init(int size)	{
 	head->next = head; //FIXME
 	scanner = head;
 	numNodesFreeList++;
+	memAvailable = head->size;
 	//  close the device (don't worry, mapping should be unaffected)
 	close(fd);
 
 	// Set this bit only if Mem_Init called correctly
-	fprintf(stdout,"Node size = %lu\n",sizeof(node_t)); // FIXME remove
-	fprintf(stdout,"Header size = %lu\n",sizeof(header_t)); // FIXME remove
+//	fprintf(stdout,"Node size = %lu\n",sizeof(node_t)); // FIXME remove
+//	fprintf(stdout,"Header size = %lu\n",sizeof(header_t)); // FIXME remove
 
 	initialized=1;
 	return 0;
@@ -76,10 +79,9 @@ void *Mem_Alloc(int size) {
 	size = size + BLOCK_SIZE -(size % BLOCK_SIZE);
 	//Actual size needed is size of region + header
 	int sizeAlloc = size + sizeof(header_t); // Optimize inline?
-	fprintf(stdout,"Size original = %d | with Header:%d\n", size, sizeAlloc); // FIXME remove
+//	fprintf(stdout,"Size original = %d | with Header:%d\n", size, sizeAlloc); // FIXME remove
 	int itr=0;
 	node_t *prev = scanner;
-	printf("BEFORE WHILE, scanner values: size%d\n",scanner->size);
  	while(scanner->size < sizeAlloc) {
 		// Take care of the scanning logic
 		itr++;
@@ -91,18 +93,24 @@ void *Mem_Alloc(int size) {
 				return NULL;
 		}
 	}
-	printf("AFTER WHILE, scanner values: size%d\n",scanner->size);
+//	printf("AFTER WHILE, scanner values: size%d\n",scanner->size);
 	if(scanner->size > sizeAlloc) {//If older region fragmented
-		node_t *new = scanner+sizeAlloc;
+
+		node_t *new = (node_t *)((char *)scanner + sizeAlloc);
 		new->size = scanner->size - sizeAlloc;
 		new->next = scanner->next;
 		//Update the previous pointer
 		prev->next = new;
-		if(scanner == head) 
+		if(scanner == head) {
 			head = new;
+		}
+		memAvailable -= sizeAlloc;
 	}
-	else		// Entire region used up, so no addition to free list
+	else {	// Entire region used up, so no addition to free list
 		prev->next = scanner->next;
+		memAvailable = memAvailable - sizeAlloc + sizeof(node_t);
+		numNodesFreeList--;
+	}
 
 	header_t *ptr = (void *)scanner;
 	ptr->size=size;
@@ -116,6 +124,48 @@ void *Mem_Alloc(int size) {
 	
 
 	return (void *)ptr;	
+}
+
+int Mem_Free(void* ptr) {
+	if(ptr == NULL) {
+		return 0;	//FIXME this is as description says no operation but no mention of error;
+	} 	
+	header_t *block = ((header_t *)ptr - 1);
+	
+	// Ensure that this is a valid ptr sent by us
+	if (block->magic != 12345678) {
+		fprintf(stderr,"Invalid Pointer passed to Mem_Free\n"); // FIXME remove
+		m_error = E_INV_PTR;
+		return -1;
+	}
+
+	node_t *node = head;
+	if ((char *)head > (char *)block) {
+		node_t *new = (void *) block;
+		new->next = head;
+		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?
+		memAvailable += new->size;
+		head = new;
+		numNodesFreeList++;
+	}
+	else {
+		while ((char *)block > (char *)node->next && node->next != NULL) { //FIXME IS THERE ANY CASE MISSING HERE?
+			node = node->next;
+		}
+		node_t *new = (void *) block;
+		new->next = node->next;
+		node->next = new;
+		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?
+		memAvailable += new->size;
+		numNodesFreeList++;
+	}
+	Mem_Dump();
+	return 0;
+}
+
+
+int Mem_Available() {
+	return memAvailable;
 }
 
 void Mem_Dump(){
@@ -132,8 +182,17 @@ void Mem_Dump(){
 }
 int main(int argc, char *argv[]) {
 	printf("Mem Init Result:%d\n",Mem_Init(1233));
-	int i=0;
-	for (; i<10; i++) 
-		printf("Iteration %d:: Mem_alloc called, return value:%p\n",i, Mem_Alloc(100));
+	int i=0; 
+	void *ptr[10];
+	for (; i<10; i++) {
+		ptr[i] = Mem_Alloc(40);
+		printf("Iteration %d:: Mem_Alloc called, return value:%p\n",i, ptr);
+	}
+	printf("Free space:%d\n", Mem_Available());
+	Mem_Free(ptr[3]);
+	Mem_Free(ptr[6]);
+	Mem_Free(ptr[7]);
+	printf("Free space:%d\n", Mem_Available());
+	
 	return 0;
 }
