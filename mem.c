@@ -130,7 +130,7 @@ void *Mem_Alloc(int size) {
 	// Make sure scanner is moved on
 	scanner = prev->next;
 
-	Mem_Dump(); //FIXME
+//	Mem_Dump(); //FIXME
 	
 //	printf("PTR RETURN HERE=====>%p\n", (void *)ptr);
 	return (void *)ptr;	
@@ -138,7 +138,7 @@ void *Mem_Alloc(int size) {
 
 int Mem_Free(void* ptr) {
 	if(ptr == NULL) {
-		return 0;	//FIXME this is as description says no operation but no mention of error;
+		return -1;	
 	} 	
 	header_t *block = ((header_t *)ptr - 1);
 	
@@ -193,7 +193,7 @@ int Mem_Free(void* ptr) {
 		}
 
 	}
-	Mem_Dump();
+//	Mem_Dump();
 	return 0;
 }
 

@@ -1,8 +1,13 @@
-testmain: mem_main.c
-	gcc -fpic -o testmain mem_main.c -Wall -Werror -g 
+all: libmem1.so libmem2.so libmem3.so
 
 test1: tester.c libmem1.so
 	gcc -lmem1 -L. -o test tester.c -Wall -Werror -g
+
+libmem3.so: mem.o
+	gcc -shared -o libmem3.so mem.o -g
+
+libmem2.so: mem.o
+	gcc -shared -o libmem2.so mem.o -g
 
 libmem1.so: mem.o
 	gcc -shared -o libmem1.so mem.o -g
