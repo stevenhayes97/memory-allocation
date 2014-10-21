@@ -45,11 +45,9 @@ int Mem_Init(int size)	{
 	}
 	// Align request to page size
 	pageSize= getpagesize();
-//	fprintf(stdout,"Get page size = %d\n",pageSize); // FIXME remove
         if(size % pageSize != 0){
 		size = size + pageSize - (size % pageSize);
 	}
-//	fprintf(stdout,"Asking for size = %d\n",size); // FIXME remove
 
 	// open the /dev/zero device
 	int fd = open("/dev/zero", O_RDWR);
@@ -59,7 +57,7 @@ int Mem_Init(int size)	{
 
 	head = (node_t *) ptr;
 	head->size = size-sizeof(node_t);
-	head->next = head; //FIXME
+	head->next = NULL; //FIXME
 	scanner = head;
 	numNodesFreeList++;
 	memAvailable = head->size;
@@ -67,8 +65,6 @@ int Mem_Init(int size)	{
 	close(fd);
 
 	// Set this bit only if Mem_Init called correctly
-	//	fprintf(stdout,"Header size = %lu\n",sizeof(header_t)); // FIXME remove
-
 	initialized=1;
 	return 0;
 }
@@ -80,28 +76,29 @@ void *Mem_Alloc(int size) {
 	}
 	//Actual size needed is size of region + header
 	int sizeAlloc = size + sizeof(header_t); // Optimize inline?
-//	fprintf(stdout,"Size original = %d | with Header:%d\n", size, sizeAlloc); // FIXME remove
-	int itr=0;
+	scanner = head;
 	node_t *prev = scanner;
- 	while(scanner->size < sizeAlloc) {
+ 	while(scanner->size + sizeof(node_t) < sizeAlloc) { //FIXME shouldn't scanner->size plus size of node_t be considered
 		// Take care of the scanning logic
-		itr++;
 		prev = scanner;
-		scanner = scanner->next;
-		if(itr == numNodesFreeList) {
-				fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
-				m_error = E_MEM_FULL;
-				return NULL;
+		if(scanner->next != NULL) {
+			scanner = scanner->next;
+			printf("SCANNER->SIZE=%d\n",scanner->size);
+		}
+		else {
+			fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
+			m_error = E_MEM_FULL;
+			return NULL;
 		}
 	}
-//	printf("AFTER WHILE, scanner values: size%d\n",scanner->size);
-	if(scanner->size > sizeAlloc) {//If older region fragmented
-
+	if(scanner->size + sizeof(node_t) > sizeAlloc) {//If older region fragmented
 		node_t *new = (node_t *)((char *)scanner + sizeAlloc);
 		new->size = scanner->size - sizeAlloc;
 		new->next = scanner->next;
 		//Update the previous pointer
-		prev->next = new;
+		if(prev != scanner) {
+			prev->next = new;
+		}
 		if(scanner == head) {
 			head = new;
 		}
@@ -109,8 +106,14 @@ void *Mem_Alloc(int size) {
 	}
 	else {	// Entire region used up, so no addition to free list, unless this is the last chunk of memory
 		if((void *)scanner != (void *)head) {
-			prev->next = scanner->next;
+			if(prev != scanner) {
+				prev->next = scanner->next;
+			}
 			memAvailable -= sizeAlloc -sizeof(node_t);
+			numNodesFreeList--;
+		}
+		else if (numNodesFreeList>1) {
+			head=head->next;
 			numNodesFreeList--;
 		}
 		else {	// Header is the only thing left
@@ -118,7 +121,6 @@ void *Mem_Alloc(int size) {
 			head->next = NULL;
 			head->size = 0;
 			memAvailable = 0;
-// FIXME			numNodesFreeList--; 
 		}
 	}
 
@@ -126,13 +128,6 @@ void *Mem_Alloc(int size) {
 	ptr->size=size;
 	ptr->magic=12345678;
 	ptr=ptr+1; // Getting the address after the header
-		
-	// Make sure scanner is moved on
-	scanner = prev->next;
-
-//	Mem_Dump(); //FIXME
-	
-//	printf("PTR RETURN HERE=====>%p\n", (void *)ptr);
 	return (void *)ptr;	
 }
 
@@ -141,7 +136,6 @@ int Mem_Free(void* ptr) {
 		return -1;	
 	} 	
 	header_t *block = ((header_t *)ptr - 1);
-	
 	// Ensure that this is a valid ptr sent by us
 	if (block->magic != 12345678) {
 		fprintf(stderr,"Invalid Pointer passed to Mem_Free\n"); // FIXME remove
@@ -149,11 +143,10 @@ int Mem_Free(void* ptr) {
 		return -1;
 	}
 	node_t *node = head;
-//	if(head != NULL) // FIXME if the head at the end is done away with!
 	if ((char *)head > (char *)block) {
 		node_t *new = (void *) block;
 		new->next = head;
-		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?
+		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?  this can be 0 if block size is 8!!!
 		memAvailable += new->size;
 		head = new;
 		numNodesFreeList++;
@@ -193,7 +186,6 @@ int Mem_Free(void* ptr) {
 		}
 
 	}
-//	Mem_Dump();
 	return 0;
 }
 
@@ -211,9 +203,7 @@ void Mem_Dump(){
 	//Print out the free list
 	int i=0;
 	for(;i<numNodesFreeList;i++) {
-		printf("Size:%d %p\n", node->size, (void *) node);
+		printf("Size:%d Addr=%p Next=%p\n", node->size, (void *) node, node->next);
 		node = node->next;
 	}
-	if (numNodesFreeList == 0)
-		printf("Size:%d %p\n", head->size, (void *) head);
 }
