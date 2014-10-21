@@ -6,19 +6,23 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <limits.h>
 #include "mem.h"
 
 int m_error;
 #define E_BAD_ARGS 1 //FIXME
 #define E_MEM_FULL 2 //FIXME
 #define E_INV_PTR 3 
-#define BLOCK_SIZE 8
+#define BLOCK_SIZE 16
+
+//Assuming char is 8 bits, which i hope to God it is or i'm screwed
 
 typedef enum _State{FREE=0,USED=1,BOUNDARY=9}State;
 
 unsigned char *mapHead;
 unsigned char *arenaHead;
-int bmSize;//bitmapSize
+int numBits;//bitmap size in actual number of bits
+int bmSize;//bitmapSize in number of bytes rounded up
 int memAvailable;
 int numBlocksFree;
 
@@ -60,17 +64,19 @@ int Mem_Init(int size)	{
 
 	//Set up the bitmap at the start and the arena after that
 	mapHead=ptr;//bit map at the start
-	bmSize = size/(BLOCK_SIZE + 1); //round down the value from TotalSize=bmSize + bmSize*BLOCK_SIZE //Wasting one byte at the end by allocating only 4095
-	arenaHead=ptr+bmSize;
-	arenaHead=mapHead;//arena after the bitmap
+	
+	bmSize= (size/BLOCK_SIZE)/CHAR_BIT;//over compensate
+	numBits=(size-bmSize)/BLOCK_SIZE; //Actual number of bits required
 
-	//Set all of bitmap to be free
+	arenaHead=ptr+bmSize;//arena after the bitmap
+
+	//Set all of bitmap to be free by zeroing them
 	int i;
 	for(i=0; i<bmSize; i++)
-		mapHead[i]=FREE;
+			mapHead[i]&=0;//Already optimized to zero the array byte by byte
 
-	numBlocksFree=bmSize;
-	memAvailable=bmSize*BLOCK_SIZE;//baisically the arena size
+	numBlocksFree=numBits;
+	memAvailable=numBits*BLOCK_SIZE;//baisically the arena size
 
 	//  close the device (don't worry, mapping should be unaffected)
 	close(fd);
@@ -81,7 +87,7 @@ int Mem_Init(int size)	{
 }
 
 
-
+//This is sort of generic to handle requests for variable sized inputs. Doesn't mark a boundary which causes problems in free
 void *Mem_Alloc(int size) {
 	//Size can't be zero
 	if (size==0)
@@ -90,44 +96,42 @@ void *Mem_Alloc(int size) {
 		return NULL;
 	}
 
-	//Aligning to 8 byte block
+	//Aligning to 16 byte block
 	if (size % BLOCK_SIZE != 0) 
 		size = size + BLOCK_SIZE - (size%BLOCK_SIZE);
 
-	int blocksReq=size/BLOCK_SIZE;//number of blocks required in the bitmap
+	int blocksReq=size/BLOCK_SIZE;//number of blocks/bits required in the bitmap
 
-	//THIS PART IS SLOW WHERE WE SEARCH FOR CONTIGUOUS FREE BLOCKS FROM EVERY BIT
+	//This is where we search for contiguous free BLOCK_SIZES or bits to satisfy the blocksReq demand (not required for simple 16byte 1bit case)
 	//Currently implemented as first fit
-	//Search for blocksReq contigous free blocks
 	int scanner=0;
 	int available;
-	int i;
-	while(scanner<=bmSize-blocksReq)//keep scanning until at a distance of less than (required blocks from the end)
+	int i, bit;
+	while(scanner<=numBits-blocksReq)//keep scanning until at a distance of less than (required blocks/bits from the end)
 	{
-		//Count available blocks
+		//Count available blocks/bits
 		available=0;
 		for(i=0;i<blocksReq; i++)
 		{
-			if(mapHead[i+scanner]!=FREE)
+			bit = mapHead[ (i+scanner)/CHAR_BIT ] >> ((i+scanner)%CHAR_BIT) & 1;//mask to get each bit out
+			if(bit!=FREE)
 				break;
 			available++;
 		}
 
-		if(available==blocksReq)//Found sufficient available from this location
+		if(available==blocksReq)//Found required number of bits from this location onward
 		{
 			void *ptr=arenaHead+(scanner*BLOCK_SIZE);//get the pointer to the corresponding start in the arena
-			//Mark the start as the boundary for the chunk in the bitmap
-			mapHead[scanner++]=BOUNDARY;//location++ means index at location and then increment location
-			//Mark the rest as USED
-			for(i=1; i<blocksReq; i++)
-				mapHead[scanner++]=USED;
+			//Mark the chunk as USED=1
+			for(i=0; i<blocksReq; i++)
+				mapHead[(scanner+i)/CHAR_BIT]|= USED << ((scanner+i)%CHAR_BIT);//OPTIMIZE LATER: Instead of bit by bit setting just set a whole byte in one step  
 
 			numBlocksFree-=blocksReq;
 			memAvailable-= blocksReq*BLOCK_SIZE;
 			return ptr;
 		}
-		else//No enough available from this location
-			scanner=scanner+available+1; //Skip one ahead of the avaialable because that was the first non-FREE block we encountered
+		else//Not enough available from this location,
+			scanner=scanner+available+1; //OPTIMIZE LATER: Can just jump 16bits ahead instead of moving bit by bit
 	}
 
 	//Failed to allocate, not enough memory
@@ -144,23 +148,19 @@ int Mem_Free(void* ptr) {
 	int arenaIndex= (int) ( (unsigned char*)ptr - arenaHead);
 	int mapIndex=arenaIndex/BLOCK_SIZE;
 
-	//This should be the boundary block at the start of this chunk
-	if(mapHead[mapIndex]!=BOUNDARY && arenaIndex%BLOCK_SIZE!=0)//Invalid ptr
+	//There should be a boundary block at the start of this chunk or it should be non-Free atleast in this case
+	int boundarybit=mapHead[mapIndex/CHAR_BIT] >> (mapIndex%CHAR_BIT) & 1;//get the bit corresponding to this index
+	if(boundarybit==FREE || arenaIndex%BLOCK_SIZE!=0)//Invalid ptr
 	{
 		m_error=E_INV_PTR;
 		return -1;
 	}
 
-	//mark blocks from here on till the next boundary as free
-	mapHead[mapIndex++]=FREE;
-	int i=1;
-	while(mapIndex < bmSize && mapHead[mapIndex]==USED)//Keep going till the end or the next boundary
-	{
-		mapHead[mapIndex++]=FREE;
-		i++;
-	}
-	numBlocksFree+=i;
-	memAvailable+=i*BLOCK_SIZE;
+	//This will be tricky later on for a variable sized malloc (i.e more than 16bytes)
+	//For now just clear 16bytes/1bit and free one block
+	mapHead[mapIndex/CHAR_BIT] &= ~(1 << mapIndex%CHAR_BIT); 
+	numBlocksFree+=1;
+	memAvailable+=1*BLOCK_SIZE;
 			
 	return 0;
 }
@@ -177,8 +177,11 @@ void Mem_Dump(){
 
 	//Not sure what to print out, this just pukes all over the console
 	//Print out each bit of the bit map(0 free, 1 used. 9 boundary)
-	int i;
-	for(i=0;i<bmSize;i++)
-		printf("%d",(int)mapHead[i]);
+	int i,bit;
+	for(i=0;i<numBits;i++)
+	{
+		bit=mapHead[i/CHAR_BIT] >> (i%CHAR_BIT) & 1;
+		printf("%d", bit);
+	}
 	printf("\n");
 }
