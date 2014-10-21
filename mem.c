@@ -45,11 +45,9 @@ int Mem_Init(int size)	{
 	}
 	// Align request to page size
 	pageSize= getpagesize();
-//	fprintf(stdout,"Get page size = %d\n",pageSize); // FIXME remove
         if(size % pageSize != 0){
 		size = size + pageSize - (size % pageSize);
 	}
-//	fprintf(stdout,"Asking for size = %d\n",size); // FIXME remove
 
 	// open the /dev/zero device
 	int fd = open("/dev/zero", O_RDWR);
@@ -67,8 +65,6 @@ int Mem_Init(int size)	{
 	close(fd);
 
 	// Set this bit only if Mem_Init called correctly
-	//	fprintf(stdout,"Header size = %lu\n",sizeof(header_t)); // FIXME remove
-
 	initialized=1;
 	return 0;
 }
@@ -95,7 +91,6 @@ void *Mem_Alloc(int size) {
 			return NULL;
 		}
 	}
-//	printf("AFTER WHILE, scanner values: size%d\n",scanner->size);
 	if(scanner->size + sizeof(node_t) > sizeAlloc) {//If older region fragmented
 		node_t *new = (node_t *)((char *)scanner + sizeAlloc);
 		new->size = scanner->size - sizeAlloc;
@@ -126,7 +121,6 @@ void *Mem_Alloc(int size) {
 			head->next = NULL;
 			head->size = 0;
 			memAvailable = 0;
-// FIXME			numNodesFreeList--; 
 		}
 	}
 
@@ -134,13 +128,6 @@ void *Mem_Alloc(int size) {
 	ptr->size=size;
 	ptr->magic=12345678;
 	ptr=ptr+1; // Getting the address after the header
-		
-	// Make sure scanner is moved on
-//	scanner = prev->next;
-
-//	Mem_Dump(); //FIXME
-	
-//	printf("PTR RETURN HERE=====>%p\n", (void *)ptr);
 	return (void *)ptr;	
 }
 
@@ -199,7 +186,6 @@ int Mem_Free(void* ptr) {
 		}
 
 	}
-//	Mem_Dump();
 	return 0;
 }
 
