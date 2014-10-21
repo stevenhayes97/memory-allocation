@@ -87,6 +87,7 @@ void *Mem_Alloc(int size) {
 		prev = scanner;
 		if(scanner->next != NULL) {
 			scanner = scanner->next;
+			printf("SCANNER->SIZE=%d\n",scanner->size);
 		}
 		else {
 			fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
@@ -114,6 +115,10 @@ void *Mem_Alloc(int size) {
 				prev->next = scanner->next;
 			}
 			memAvailable -= sizeAlloc -sizeof(node_t);
+			numNodesFreeList--;
+		}
+		else if (numNodesFreeList>1) {
+			head=head->next;
 			numNodesFreeList--;
 		}
 		else {	// Header is the only thing left
@@ -144,7 +149,6 @@ int Mem_Free(void* ptr) {
 		return -1;	
 	} 	
 	header_t *block = ((header_t *)ptr - 1);
-	printf("MEM_FREE CALLED-> size=%d\n",block->size);	
 	// Ensure that this is a valid ptr sent by us
 	if (block->magic != 12345678) {
 		fprintf(stderr,"Invalid Pointer passed to Mem_Free\n"); // FIXME remove
@@ -152,7 +156,6 @@ int Mem_Free(void* ptr) {
 		return -1;
 	}
 	node_t *node = head;
-//	if(head != NULL) // FIXME if the head at the end is done away with!
 	if ((char *)head > (char *)block) {
 		node_t *new = (void *) block;
 		new->next = head;
@@ -214,9 +217,7 @@ void Mem_Dump(){
 	//Print out the free list
 	int i=0;
 	for(;i<numNodesFreeList;i++) {
-		printf("Size:%d %p\n", node->size, (void *) node);
+		printf("Size:%d Addr=%p Next=%p\n", node->size, (void *) node, node->next);
 		node = node->next;
 	}
-	if (numNodesFreeList == 0)
-		printf("Size:%d %p\n", head->size, (void *) head);
 }
