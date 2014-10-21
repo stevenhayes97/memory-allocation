@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "mem.h"
-#define NUM_ITER 255
+#define NUM_ITER 4
 
 int main(int argc, char *argv[]) 
 {
@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
 	void *ptr[NUM_ITER];
 	for (; i<NUM_ITER; i++) 
 	{
-		ptr[i] = Mem_Alloc(1);
+		ptr[i] = Mem_Alloc(80);
 		printf("%d allocated, Free space:%d\n", i+1, Mem_Available());
 	}
 	//printf("Free space:%d\n", Mem_Available());
