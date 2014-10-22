@@ -76,6 +76,11 @@ void *Mem_Alloc(int size) {
 	}
 	//Actual size needed is size of region + header
 	int sizeAlloc = size + sizeof(header_t); // Optimize inline?
+	if (head == NULL) { // No more free space left!
+		fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
+		m_error = E_MEM_FULL;
+		return NULL;
+	}
 	scanner = head;
 	node_t *prev = scanner;
  	while(scanner->size + sizeof(node_t) < sizeAlloc) { //FIXME shouldn't scanner->size plus size of node_t be considered
@@ -117,10 +122,13 @@ void *Mem_Alloc(int size) {
 			numNodesFreeList--;
 		}
 		else {	// Header is the only thing left
-			head = (node_t *)((char *)scanner + sizeAlloc);
+			head = NULL;
+			numNodesFreeList--;
+/*			head = (node_t *)((char *)scanner + sizeAlloc);
 			head->next = NULL;
 			head->size = 0;
 			memAvailable = 0;
+			*/
 		}
 	}
 
@@ -142,6 +150,16 @@ int Mem_Free(void* ptr) {
 		m_error = E_INV_PTR;
 		return -1;
 	}
+	//IF WE USED UP ALL THE FREE SPACES
+	if (head == NULL) {
+		numNodesFreeList++;
+		node_t *new = (void *) block;
+		new->next = NULL;
+		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?  this can be 0 if block size is 8!!!
+		head = new;
+		return 0;
+	}
+	// IF NOT PROCEED NORMALLY
 	node_t *node = head;
 	if ((char *)head > (char *)block) {
 		node_t *new = (void *) block;
