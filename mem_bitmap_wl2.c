@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <limits.h>
+#include <pthread.h>
 #include "mem.h"
 
 int m_error;
@@ -25,6 +26,7 @@ int numBits;//bitmap size in actual number of bits
 int bmSize;//bitmapSize in number of bytes rounded up
 int memAvailable;
 int numBlocksFree;
+pthread_mutex_t lock;
 
 
 
@@ -81,6 +83,13 @@ int Mem_Init(int size)	{
 	//  close the device (don't worry, mapping should be unaffected)
 	close(fd);
 
+	//Initialize the lock
+	if (pthread_mutex_init(&lock, NULL) != 0)
+	{
+		fprintf(stderr,"mutex init failed\n");
+		return -1;
+	}
+
 	// Set this bit only if Mem_Init called correctly
 	initialized=1;
 	return 0;
@@ -101,6 +110,7 @@ void *Mem_Alloc(int size) {
 		size = size + BLOCK_SIZE - (size%BLOCK_SIZE);
 
 	int blocksReq=size/BLOCK_SIZE;//number of blocks/bits required in the bitmap
+	pthread_mutex_lock(&lock);
 
 	//This is where we search for contiguous free BLOCK_SIZES or bits to satisfy the blocksReq demand (not required for simple 16byte 1bit case)
 	//Currently implemented as first fit
@@ -146,6 +156,7 @@ void *Mem_Alloc(int size) {
 			//FIXME should this be changed?
 			numBlocksFree-=blocksReq;
 			memAvailable-= blocksReq*BLOCK_SIZE;
+			pthread_mutex_unlock(&lock);
 			return ptr;
 		}
 		else {//Not enough available from this location,
@@ -160,6 +171,7 @@ void *Mem_Alloc(int size) {
 
 	//Failed to allocate, not enough memory
 	m_error=E_MEM_FULL;
+	pthread_mutex_unlock(&lock);
 	return NULL;	
 }
 
@@ -173,10 +185,12 @@ int Mem_Free(void* ptr) {
 	int mapIndex=arenaIndex/BLOCK_SIZE;
 
 	//There should be a boundary block at the start of this chunk or it should be non-Free atleast in this case
+	pthread_mutex_lock(&lock);
 	int boundarybit=mapHead[mapIndex/CHAR_BIT] >> (mapIndex%CHAR_BIT) & 1;//get the bit corresponding to this index
 	if(boundarybit==FREE || arenaIndex%BLOCK_SIZE!=0)//Invalid ptr
 	{
 		m_error=E_INV_PTR;
+		pthread_mutex_unlock(&lock);
 		return -1;
 	}
 
@@ -190,7 +204,7 @@ int Mem_Free(void* ptr) {
 	numBlocksFree+=freed;
 	memAvailable+=freed*BLOCK_SIZE;
 //	printf("FREE DEBUG INFO===>bit1=%d bit2=%d freed=%d\n",bit1, bit2,freed);
-			
+	pthread_mutex_unlock(&lock);
 	return 0;
 }
 

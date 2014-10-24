@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <pthread.h>
 #include "mem.h"
 
 int m_error;
@@ -27,19 +28,21 @@ node_t *head;
 node_t *scanner;
 int numNodesFreeList=0;
 int memAvailable=0;
+pthread_mutex_t lock;
+
 
 int Mem_Init(int size)	{
 	static int initialized=0;
 	int pageSize;
 	//Ensure that Mem_Init is only called once
 	if(initialized == 1) {
-		fprintf(stderr,"Mem_Init called more than once\n"); // FIXME remove
+//		fprintf(stderr,"Mem_Init called more than once\n"); // FIXME remove
 		m_error = E_BAD_ARGS;
 		return -1;
 	}	
 	// Ensure that size is correct
 	if(size <= 0) {
-		fprintf(stderr,"Mem_Init called with incorrect size\n"); // FIXME remove
+//		fprintf(stderr,"Mem_Init called with incorrect size\n"); // FIXME remove
 		m_error = E_BAD_ARGS;
 		return -1;
 	}
@@ -63,6 +66,13 @@ int Mem_Init(int size)	{
 	memAvailable = head->size;
 	//  close the device (don't worry, mapping should be unaffected)
 	close(fd);
+	
+	//Initialize the lock
+	if (pthread_mutex_init(&lock, NULL) != 0)
+	{
+		fprintf(stderr,"mutex init failed\n");
+		return -1;
+	}
 
 	// Set this bit only if Mem_Init called correctly
 	initialized=1;
@@ -76,8 +86,10 @@ void *Mem_Alloc(int size) {
 	}
 	//Actual size needed is size of region + header
 	int sizeAlloc = size + sizeof(header_t); // Optimize inline?
+	pthread_mutex_lock(&lock);
 	if (head == NULL) { // No more free space left!
-		fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
+//		fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
+		pthread_mutex_unlock(&lock);
 		m_error = E_MEM_FULL;
 		return NULL;
 	}
@@ -91,7 +103,8 @@ void *Mem_Alloc(int size) {
 			printf("SCANNER->SIZE=%d\n",scanner->size);
 		}
 		else {
-			fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
+//			fprintf(stderr,"Mem_Alloc couldn't allocate of size:%d\n",size); // FIXME remove
+			pthread_mutex_unlock(&lock);
 			m_error = E_MEM_FULL;
 			return NULL;
 		}
@@ -136,20 +149,26 @@ void *Mem_Alloc(int size) {
 	ptr->size=size;
 	ptr->magic=12345678;
 	ptr=ptr+1; // Getting the address after the header
+	pthread_mutex_unlock(&lock);
 	return (void *)ptr;	
 }
 
 int Mem_Free(void* ptr) {
+	pthread_mutex_lock(&lock);
 	if(ptr == NULL) {
+		pthread_mutex_unlock(&lock);
 		return -1;	
 	} 	
 	header_t *block = ((header_t *)ptr - 1);
+//	printf("Block address:%p size=%d magic=%d\n",block, block->size, block->magic);
 	// Ensure that this is a valid ptr sent by us
 	if (block->magic != 12345678) {
-		fprintf(stderr,"Invalid Pointer passed to Mem_Free\n"); // FIXME remove
+//		fprintf(stderr,"Invalid Pointer passed to Mem_Free\n"); // FIXME remove
 		m_error = E_INV_PTR;
+		pthread_mutex_unlock(&lock);
 		return -1;
 	}
+	block->magic = 0;
 	//IF WE USED UP ALL THE FREE SPACES
 	if (head == NULL) {
 		numNodesFreeList++;
@@ -157,6 +176,7 @@ int Mem_Free(void* ptr) {
 		new->next = NULL;
 		new->size = block->size + sizeof(header_t) - sizeof(node_t); // FIXME INLINE ALL SIZEOFs?  this can be 0 if block size is 8!!!
 		head = new;
+		pthread_mutex_unlock(&lock);
 		return 0;
 	}
 	// IF NOT PROCEED NORMALLY
@@ -204,6 +224,7 @@ int Mem_Free(void* ptr) {
 		}
 
 	}
+	pthread_mutex_unlock(&lock);
 	return 0;
 }
 
@@ -224,4 +245,4 @@ void Mem_Dump(){
 		printf("Size:%d Addr=%p Next=%p\n", node->size, (void *) node, node->next);
 		node = node->next;
 	}
-}
+} 
