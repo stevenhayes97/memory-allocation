@@ -26,7 +26,6 @@ int numBits;//bitmap size in actual number of bits
 int bmSize;//bitmapSize in number of bytes rounded up
 int memAvailable;
 int numBlocksFree;
-int scanner=0;
 pthread_mutex_t lock;
 
 
@@ -115,6 +114,7 @@ void *Mem_Alloc(int size) {
 
 	//This is where we search for contiguous free BLOCK_SIZES or bits to satisfy the blocksReq demand (not required for simple 16byte 1bit case)
 	//Currently implemented as first fit
+	int scanner=0;
 	int available;
 	int i, bit;
 	while(scanner<=numBits-blocksReq)//keep scanning until at a distance of less than (required blocks/bits from the end)
