@@ -1,0 +1,14 @@
+Name: Swapnil Haria
+CSL-ID: swapnilh
+Name: Haseeb Tariq
+CSL-ID: htariq
+(Leave the second name and ID blank if working alone)
+
+Linux-Implementation Details:
+The implementation aimed at workload 1 is a simple bitmap based allocator, using 1 bit for every 16 byte block in the memory requested. We modify this for workload 2, by having
+three bits for each 16 byte block. The first bit is 0 or 1, if its allocated or not. The next two bits are 00 01 and 10 for 16, 80 and 256 byte-blocks respectively. Thus for every memory allocation,
+only a max of two bits are set (corresponding to the initial block in the segment!), and for memory deallocation, only one bit needs to be cleared. 
+For Workload 3, we use a linked list based approach, similar to the one discussed in the textbook.
+For libraries for WL1 and WL2, we use a Next Fit allocation policy, and first fit for WL3.
+XV6-Implementation Details:
+
