@@ -26,6 +26,7 @@ int numBits;//bitmap size in actual number of bits
 int bmSize;//bitmapSize in number of bytes rounded up
 int memAvailable;
 int numBlocksFree;
+int scanner=0;
 pthread_mutex_t lock;
 
 
@@ -77,7 +78,7 @@ int Mem_Init(int size)	{
 	for(i=0; i<bmSize; i++)
 			mapHead[i]&=0;//Already optimized to zero the array byte by byte
 
-	numBlocksFree=numBits;
+	numBlocksFree=numBits/BITS_PER_BLOCK;
 	memAvailable=numBits*BLOCK_SIZE/BITS_PER_BLOCK;//baisically the arena size
 
 	//  close the device (don't worry, mapping should be unaffected)
@@ -111,14 +112,21 @@ void *Mem_Alloc(int size) {
 
 	int blocksReq=size/BLOCK_SIZE;//number of blocks/bits required in the bitmap
 	pthread_mutex_lock(&lock);
+	if(blocksReq>numBlocksFree) {
+	//Failed to allocate, not enough memory
+		m_error=E_MEM_FULL;
+		pthread_mutex_unlock(&lock);
+		return NULL;	
+	}
 
 	//This is where we search for contiguous free BLOCK_SIZES or bits to satisfy the blocksReq demand (not required for simple 16byte 1bit case)
 	//Currently implemented as first fit
-	int scanner=0;
 	int available,taken;
-	int i, bit;
-	while(scanner<=numBits-blocksReq*BITS_PER_BLOCK)//keep scanning until at a distance of less than (required blocks/bits from the end)
+	int i, bit, ctr=0;
+	while(ctr<numBits)//keep scanning until at a distance of less than (required blocks/bits from the end)
 	{
+		if(scanner>=numBits)
+			scanner=0;
 		//Count available blocks/bits
 		available=0;	//FIXME available and i are the same -1
 		taken=0;
@@ -165,6 +173,7 @@ void *Mem_Alloc(int size) {
 			bit2 = mapHead[ (i+scanner+2)/CHAR_BIT ] >> ((i+scanner+2)%CHAR_BIT) & 1;//mask to get each bit out
 			taken = (bit1==1)? 16*BITS_PER_BLOCK : ((bit2==1)?5*BITS_PER_BLOCK:1*BITS_PER_BLOCK);	
 			scanner=scanner+available*BITS_PER_BLOCK+taken; 
+			ctr+=available*BITS_PER_BLOCK+taken;
 //			printf("NOT FREE DEBUG INFO===>bit1=%d bit2=%d taken=%d\n",bit1, bit2,taken);
 		}
 	}
